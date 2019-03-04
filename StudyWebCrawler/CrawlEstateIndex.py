@@ -76,6 +76,106 @@ class CrawlerLianjiaEsatesIndex(Crawler):
                 list_queue.put(estate)
         # self.write_list_txtfile(estate_index, "estates_list.txt")
 
+    # 取得房产具体信息
+    def get_estate_info(self, html):
+
+        selector = etree.HTML(html)
+        # 获取列表
+        # 大区 小区房型 面积 楼层 建造时间 发布时间 地铁站#列表
+        for info in selector.xpath("//li[@class='clear']"):
+
+            name = info.xpath("./div[@class='info clear']/div[@class='address']/div[@class='houseInfo']")
+            if name:
+                name = \
+                info.xpath("./div[@class='info clear']/div[@class='address']/div[@class='houseInfo']/text()")[0]
+                name = name.split('| ')
+                for x in name:
+                    if x == ' ':
+                        name.remove(x)
+                house_type = name[0]  # 房型
+                house_size = name[1]  # 面积
+            else:
+                house_type = '暂无数据'
+                house_size = '暂无数据'
+            year_type = info.xpath("./div[@class='info clear']/div[@class='flood']/div[@class='positionInfo']")
+            if year_type:
+                year_type = \
+                    info.xpath("./div[@class='info clear']/div[@class='flood']/div[@class='positionInfo']/text()")[
+                        0]
+                year_type = year_type.split(')')
+                house_num = year_type[0] + ')'  # 楼层
+                house_year = year_type[1].split(' ')[0]  # 楼型
+            else:
+                house_num = '暂无数据'
+                house_year = '暂无数据'
+            times = info.xpath("./div[@class='info clear']/div[@class='followInfo']")
+            if times:
+                times = info.xpath("./div[@class='info clear']/div[@class='followInfo']/text()")[0]
+                house_times = times.split('/ ')[-1].split('以前')[0]  # 发布时间
+            else:
+                house_times = '暂无数据'
+            subway = info.xpath("./div[@class='info clear']/div[@class='tag']/span[@class='subway']/text()")  # 地铁信息
+            if subway != []:
+                subway = subway[0]
+            else:
+                subway = '暂无数据'
+            price = info.xpath("./div[@class='info clear']/div[@class='priceInfo']/div[@class='totalPrice']/span")
+            if price:
+                price = \
+                    info.xpath(
+                        "./div[@class='info clear']/div[@class='priceInfo']/div[@class='totalPrice']/span/text()")[
+                        0]
+            else:
+                price = '暂无数据'  # 房价实际数
+            pricedanwei = info.xpath("./div[@class='info clear']/div[@class='priceInfo']/div[@class='totalPrice']")
+            if pricedanwei:
+                pricedanwei = \
+                    info.xpath(
+                        "./div[@class='info clear']/div[@class='priceInfo']/div[@class='totalPrice']/text()")[0]
+            houseprice = price + pricedanwei  # 总房价
+            Unit_Price = info.xpath(
+                "./div[@class='info clear']/div[@class='priceInfo']/div[@class='unitPrice']/span/text()")
+            if Unit_Price != []:
+                Unit_Price = Unit_Price[0].split('单价')[-1]
+            yield {
+                '地区': area,
+                '街道': url,
+                '房型': house_type,
+                '面积': house_size,
+                '楼层': house_num,
+                '建造时间': house_year,
+                '发布时间': house_times,
+                '房价': houseprice,
+                '单价': Unit_Price,
+                '地铁': subway
+            }
+
+
+    def write_info(item):
+        with open('lianjiaershou.csv', 'ab') as f:
+            item = dict(item)
+            f.write(item['地区'].encode('gbk'))
+            f.write(b',')
+            f.write(item['街道'].encode('gbk'))
+            f.write(b',')
+            f.write(item['房型'].encode('gbk'))
+            f.write(b',')
+            f.write(item['面积'].encode('gbk'))
+            f.write(b',')
+            f.write(item['楼层'].encode('gbk'))
+            f.write(b',')
+            f.write(item['建造时间'].encode('gbk'))
+            f.write(b',')
+            f.write(item['发布时间'].encode('gbk'))
+            f.write(b',')
+            f.write(item['房价'].encode('gbk'))
+            f.write(b',')
+            f.write(item['地区'].encode('gbk'))
+            f.write(b',')
+            f.write(item['单价'].encode('gbk'))
+            f.write(b',')
+            f.write(item['地铁'].encode('gbk'))
+            f.write(b'\r\n')
 
     def get_estate_detail(self, url, detail_queue, thread_id):
         print("Threading %d crawl %s" % thread_id, url)
@@ -92,8 +192,6 @@ class CrawlerLianjiaEsatesIndex(Crawler):
 
         estate = 'id:"{}", name:"{}" , url:"{}"'.format(estate_id, estate_name, estate_detail_url)
         list_queue.put(estate)
-
-
 
     # 处理抓取的IP，按线程数量进行切片，分别获得每片的起始位置，然后用不同的线程读取不同的数据块
     def slice_list_and_multiple_threading_get_list(self,target_function, target_list):
@@ -113,7 +211,7 @@ class CrawlerLianjiaEsatesIndex(Crawler):
             print("block - " + str(i))
             # verify_ip(ip_port_list[i * intBlockIPCount: (i + 1) * intBlockIPCount], valid_ip_queue)
             thread = threading.Thread(target=target_function, args=(
-                target_list[i * block_target_count: (i + 1) * block_target_count], _queue, i))
+                target_list[i * block_target_count: (i + 1) * block_target_count-1], _queue, i))
             crawl_thread.append(thread)
 
         start_time = time.time()
@@ -135,6 +233,7 @@ class CrawlerLianjiaEsatesIndex(Crawler):
     # 	print(valid_ip_queue.get())
 
     def main(self):
+        pass
 
 
 
