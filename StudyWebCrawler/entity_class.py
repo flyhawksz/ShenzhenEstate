@@ -1,10 +1,24 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from Mysql_connect_pool_tools import MyPymysqlPool
+import logging  # log相关功能，不能总是用print那么low
 
-class EntityClass:
 
-    t_EstateDetail = '''
+# 生成数据库相关表
+class CreateTables:
+    
+    def __init__(self):
+        # 配置log信息存储的位置
+        logging.basicConfig(filename='./debug.log', filemode="w", level=logging.DEBUG)
+        
+        logging.info("create_mysql")
+        self.mysql = MyPymysqlPool(self.connargs)
+        
+        self.connargs = {"host": "localhost", "port": "3306", "user": "root", "passwd": "123456", "db": "test"}
+
+        self.t_EstateDetail = 't_EstateDetail'
+        self.sql_t_EstateDetail = '''
         CREATE TABLE IF NOT EXISTS szEstate.t_EstateDetail ( 
         id INT COMMENT 'id',
         lianjiaID INT COMMENT '链家编号',
@@ -52,7 +66,8 @@ class EntityClass:
         -----Create table [t_EstateDetail] end.
         '''
 
-    t_CommunitiesDetail = '''
+        self.t_CommunitiesDetail = 't_CommunitiesDetail'
+        self.sql_t_CommunitiesDetail = '''
         CREATE TABLE IF NOT EXISTS szEstate.t_CommunitiesDetail ( 
         id INT COMMENT 'id',
         cityID INT COMMENT '城市ID',
@@ -72,7 +87,8 @@ class EntityClass:
         -----Create table [t_CommunitiesDetail] end.
         '''
 
-    t_bizCircle = '''
+        self.t_bizCircle = 't_bizCircle '
+        self.sql_t_bizCircle = '''
         CREATE TABLE IF NOT EXISTS szEstate.t_bizCircle ( 
         id INT COMMENT 'id',
         cityID INT COMMENT '城市ID',
@@ -84,7 +100,8 @@ class EntityClass:
         )
         -----Create table [t_bizCircle] end.
         '''
-    t_district='''
+        self.t_district = 't_district'
+        self.sql_t_district = '''
         CREATE TABLE IF NOT EXISTS szEstate.t_district ( 
         id INT COMMENT 'id',
         cityID INT COMMENT '城市ID',
@@ -94,8 +111,9 @@ class EntityClass:
         )
         -----Create table [t_district] end.
         '''
-
-    t_city = '''
+        
+        self.t_city = 't_city'
+        self.sql_t_city = '''
         CREATE TABLE IF NOT EXISTS szEstate.t_city ( 
         id INT COMMENT 'id',
         cityID INT COMMENT '城市ID',
@@ -103,3 +121,34 @@ class EntityClass:
         )
         -----Create table [t_city] end.
         '''
+ 
+    def __del__(self):
+        if self.mysql:
+            self.mysql.dispose
+ 
+    # 生成MySQL数据库连接池
+    def create_mysql(self, connargs):
+        logging.info("create_mysql")
+        self.mysql = MyPymysqlPool(connargs)
+ 
+    def create_tables(self):
+        
+        if not self.mysql.hasThisTable(self.t_city):
+            self.mysql.insert(self.sql_t_city)
+ 
+        if not self.mysql.hasThisTable(self.t_district):
+            self.mysql.insert(self.sql_t_district)
+
+        if not self.mysql.hasThisTable(self.t_bizCircle):
+            self.mysql.insert(self.sql_t_bizCircle)
+
+        if not self.mysql.hasThisTable(self.t_CommunitiesDetail):
+            self.mysql.insert(self.sql_t_CommunitiesDetail)
+            
+        if not self.mysql.hasThisTable(self.t_EstateDetail):
+            self.mysql.insert(self.sql_t_EstateDetail)
+            
+class entiy_city:
+    pass
+
+
