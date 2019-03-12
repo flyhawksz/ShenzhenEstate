@@ -18,11 +18,11 @@ from Crawl import Crawler
 
 class ProxyCrawlerAndVerfiy(Crawler):
     is_clear_all_data = False
-    connargs = {"host": "localhost", "port": "3306", "user": "root", "passwd": "123456", "db": "test"}
+    connargs = {"host": "localhost", "port": "3306", "user": "root", "passwd": "123456", "db": "proxyip"}
     
     def __init__(self):  # 类的初始化函数，在类中的函数都有个self参数，其实可以理解为这个类的对象
         Crawler.__init__(self)
-        self.database_name = 'test'
+        self.database_name = 'proxyip'
         self.file_proxy_all_list = "proxy_candidate.txt"  # 保存 免费代理服务器网站 爬下来的所有代理IP
         self.file_proxy_valid_list = "proxy_valid.txt"  # 保存 通过验证可用的 代理IP
         self.file_proxy_all_list_table = "proxy_candidate"  # 保存 免费代理服务器网站 爬下来的所有代理IP
@@ -225,7 +225,7 @@ class ProxyCrawlerAndVerfiy(Crawler):
         slice_ip_list()
     
     def main(self):
-        # self.get_proxies()
+        self.get_proxies()
         self.verify_proxy()
 
 
