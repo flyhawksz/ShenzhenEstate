@@ -52,8 +52,8 @@ class Crawler(object):
         return gain_list
 
     # 返回网页代码
-    def get_html(self, url):
-        response = requests.get(url, headers=self.http_headers)
+    def get_html(self, url, proxy_ip=None):
+        response = requests.get(url, headers=self.http_headers, proxy=proxy_ip)
         # print(response.text)
         return response.text
 
@@ -74,10 +74,36 @@ class Crawler(object):
                 f.write(t_list + '\n')
         logging.info("Finish Writing!!!")
 
-    def write_list_into_mysql(self, list, table_name):
+    def write_one_dict_into_mysql(self, table_name, dict_data):
+        fields = ','.join(dict_data.keys())
+        values = ','.join(dict_data.values())
         try:
             logging.info("insert into " + table_name + " (ip) values (%s);")
-            self.mysql.insertMany("insert into " + table_name + " (ip) values (%s);", list)
+            self.mysql.insert(
+                "insert into {table} ({key}) values ({val});".format(table=table_name, key=fields, val=values))
+            # self.mysql.end()
+    
+        except Exception as e:
+            print("Insert fail")
+            logging.warning("Insert fail", e)
+
+    def write_one_into_mysql(self, table_name, fields_tuple, value_tuple):
+        fields = ','.join(fields_tuple)
+        values = ','.join(value_tuple)
+        try:
+            logging.info("insert into " + table_name + " (ip) values (%s);")
+            self.mysql.insert("insert into {table} ({key}) values ({val});".format(table=table_name, key=fields, val=values))
+            # self.mysql.end()
+    
+        except Exception as e:
+            print("Insert fail")
+            logging.warning("Insert fail", e)
+    
+    # 如果多字段，value_list 形如 （（f1,f2,f3）, (f1,f2,f3)）
+    def write_list_into_mysql(self, table_name, fields, value_list):
+        try:
+            logging.info("insert into " + table_name + " (%s) values (%s);")
+            self.mysql.insertMany("insert into %s  (%s) values (%s);", table_name, fields, value_list)
             self.mysql.end()
                 
         except Exception as e:
@@ -88,4 +114,4 @@ class Crawler(object):
     def create_mysql(self, connargs):
         logging.info("create_mysql")
         self.mysql = MyPymysqlPool(connargs)
-    
+

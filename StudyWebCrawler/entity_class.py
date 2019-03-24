@@ -16,6 +16,8 @@ class CreateTables:
         
         logging.info("create_mysql")
         self.mysql = MyPymysqlPool(self.conn_args)
+        
+        self.database_name = "szEstate"
 
         self.t_EstateDetail = 't_EstateDetail'
         self.sql_t_EstateDetail = ('CREATE TABLE IF NOT EXISTS szEstate.t_EstateDetail ( '
@@ -118,6 +120,9 @@ class CreateTables:
         logging.info("create_mysql")
         if not self.mysql:
             self.mysql = MyPymysqlPool(self.conn_args)
+ 
+    def create_database(self):
+        self.mysql.insert("create database if not exists " + self.database_name)
  
     def create_tables(self):
         
@@ -227,8 +232,15 @@ class EstateDetail:
         self.usageTpye  # 房屋用途
         self.belongging  # 房权所属
 
+class Proxy_IP:
+    def __init__(self):
+        self.id
+        self.ip
+        
+
 
 if __name__ == '__main__':
     do = CreateTables()
+    do.create_database()
     # do.create_mysql()
     do.create_tables()

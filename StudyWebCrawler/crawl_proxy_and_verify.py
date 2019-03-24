@@ -22,11 +22,11 @@ class ProxyCrawlerAndVerfiy(Crawler):
     
     def __init__(self):  # 类的初始化函数，在类中的函数都有个self参数，其实可以理解为这个类的对象
         Crawler.__init__(self)
-        self.database_name = 'proxyip'
+        self.database_name = 'szestate'
         self.file_proxy_all_list = "proxy_candidate.txt"  # 保存 免费代理服务器网站 爬下来的所有代理IP
         self.file_proxy_valid_list = "proxy_valid.txt"  # 保存 通过验证可用的 代理IP
-        self.file_proxy_all_list_table = "proxy_candidate"  # 保存 免费代理服务器网站 爬下来的所有代理IP
-        self.file_proxy_valid_list_table = "proxy_valid"  # 保存 通过验证可用的 代理IP
+        self.file_proxy_all_list_table = self.database_name + ".proxy_candidate"  # 保存 免费代理服务器网站 爬下来的所有代理IP
+        self.file_proxy_valid_list_table = self.database_name + ".proxy_valid"  # 保存 通过验证可用的 代理IP
         self.proxy_resource_Url = "http://www.xicidaili.com/nn/"  # 用于爬取代理信息的网站
         self.verify_url = "http://www.baidu.com/"  # 用于验证Proxy IP的网站
         self.proxy_resource_page = 5  # 获取代理页面数量
@@ -38,6 +38,9 @@ class ProxyCrawlerAndVerfiy(Crawler):
                 self.create_mysql(self.connargs)
         except Exception as e:
             print(e)
+
+        # 生成数据库   create database if not exists ' + name
+        self.mysql.insert("create database if not exists " + self.database_name)
 
         if not self.mysql.hasThisTable(self.file_proxy_all_list_table):
             self.mysql.insert(
@@ -116,7 +119,7 @@ class ProxyCrawlerAndVerfiy(Crawler):
         self.write_list_txtfile(proxies, self.file_proxy_all_list)
         
         # 将list中所有信息写入数据库test,表 candidate_ip
-        self.write_list_into_mysql(proxies, self.file_proxy_all_list_table)
+        self.write_list_into_mysql(self.file_proxy_all_list_table, "ip", proxies)
         
     # 验证IP
     def verify_proxy(self):  # 从proxy_all.txt获取所有Proxy IP进行验证，将有效的IP存入proxy_valid.txt
@@ -165,7 +168,7 @@ class ProxyCrawlerAndVerfiy(Crawler):
             #     ip_port_list = fd_proxy_all.readlines()  # 读取全部内容
             
             # 从数据库取出带验证IP
-            sql = 'SELECT * FROM %s;' % (self.database_name + '.' + self.file_proxy_all_list_table)
+            sql = 'SELECT * FROM %s;' % self.file_proxy_all_list_table
             result = self.mysql.getMany(sql, 200)  # "all", 100
 
             # 将MySQL的字典，转换为列表
@@ -176,6 +179,7 @@ class ProxyCrawlerAndVerfiy(Crawler):
                 # print('\n')
                 ip_port_list.append(it['ip'])
             
+            # 切片进行验证
             ip_count = len(ip_port_list)
             if ip_count % self.verify_threading_number == 0:
                 block = self.verify_threading_number
@@ -215,7 +219,7 @@ class ProxyCrawlerAndVerfiy(Crawler):
                 self.write_list_txtfile(valid_ip_list, self.file_proxy_valid_list)
                 
                 # 写入数据库
-                self.write_list_into_mysql(valid_ip_list, self.file_proxy_valid_list_table)
+                self.write_list_into_mysql(self.file_proxy_valid_list_table, "ip", valid_ip_list)
             else:
                 print("there is no valid IP")
                 logging.warning("there is no valid IP")
@@ -225,7 +229,7 @@ class ProxyCrawlerAndVerfiy(Crawler):
         slice_ip_list()
     
     def main(self):
-        self.get_proxies()
+        # self.get_proxies()
         self.verify_proxy()
 
 

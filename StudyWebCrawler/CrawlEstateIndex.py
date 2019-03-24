@@ -9,11 +9,11 @@
 from lxml import etree
 import logging  # log相关功能，不能总是用print那么low
 import threading  # 导入线程包
-import queue  # 多线程传递验证通过的IP, 保证线程安全
-import os
 import time
-import codecs
 from Crawl import Crawler
+import entity_class
+import random
+from concurrent.futures import ThreadPoolExecutor
 
 
 class CrawlerLianjiaEsatesIndex(Crawler):
@@ -21,222 +21,121 @@ class CrawlerLianjiaEsatesIndex(Crawler):
     def __init__(self):  # 类的初始化函数，在类中的函数都有个self参数，其实可以理解为这个类的对象
 
         Crawler.__init__(self)
-
+        
+        # 初始化数据库连接
+        try:
+            if self.mysql is None:
+                self.create_mysql(self.connargs)
+        except Exception as e:
+            print(e)
+            
+        self.thread_lock = threading.Lock()
+        self.database_name = 'szestate'
+        self.proxy_all_list_table = self.database_name + ".proxy_candidate"  # 保存 免费代理服务器网站 爬下来的所有代理IP
+        self.proxy_valid_list_table = self.database_name + ".proxy_valid"  # 保存 通过验证可用的 代理IP
+        
+        self.dealed_esate_candidate_table = self.database_name + ".dealed_esate_candidate"  # 保存 通过验证可用的 代理IP
+        
         self.file_all_list = "estates_all.txt"  # 保存 免费代理服务器网站 爬下来的所有代理IP
         self.proxy_resource_Url = ""  # 用于爬取代理信息的网站
-        self.resource_page_number = 2  # 获取页面数量
-        self.crawl_threading_number = 10  # 抓取页面线程数量+
+        self.resource_page_number = 1  # 获取页面数量
+        self.threading_pool_size = 10  # 抓取页面线程数量+
 
-        self.list_url = ""
+        self.list_url = "https://sz.lianjia.com/chengjiao/"
         self.detail_rul = ""
 
+        self.index_url_list = []
+        self.create_url_list()
+        # print(self.index_url_list)
+        
+        self.proxy_list = []
+        self.get_proxy_list()
+        self.proxy_pool_list = self.proxy_list
+
+        self.mysql.insert(
+            "create table if not exists " + self.dealed_esate_candidate_table
+            + "(id int not null AUTO_INCREMENT PRIMARY KEY ,estate_id char(30), esate_name char(30), url char(150))")  # 自增长
 
     # 获取房产ID
     # 解析网页，并得到网页中的ID,保存为文件
-    def get_estate_id(self, html):
-        # 对获取的页面进行解析
-        selector = etree.HTML(html)
-        # print(selector.xpath("//title/text()"))
-        estate_index = []
-        # 信息提取 ， /html/body/div[5]/div[1]/ul/li
-        for each in selector.xpath("//html/body/div[5]/div[1]/ul/li"):
-            # 获取房产详细页面,/html/body/div[5]/div[1]/ul/li[1]/div/div[1]/a
-            estate_detail_url = each.xpath("./div/div[1]/a/@href")[0]
-            # 获取ID,/html/body/div[1]/div[2]/table/tbody/tr[92]/td[3]
-            estate_id = (estate_detail_url.strip().split('/')[-1]).split('.')[0]
-            # 获取名称
-            estate_name = each.xpath("./div/div[1]/a/text()")[0]
-            estate = 'id:{}, name:{} , url:{}'.format(estate_id, estate_name, estate_detail_url)
-            estate_index.append(estate)
-        # 计算每个页面一共有几个IP地址
-        print(len(estate_index))
-        logging.info('Get estate list %d' % len(estate_index))
-        # 将list中所有信息写入proxy_all.txt
-        self.write_list_txtfile(estate_index, self.file_all_list)
-
-
-    def get_estates_list(self, url, list_queue, thread_id):
-        print("Threading %d crawl %s" % thread_id, url)
+    def get_estates_list(self, url):
+        estate_list = []
+        proxy_ip = ""
+        fields = ('id', 'name', 'url')
+        # print("Threading %d crawl %s" % threading.currentThread().ident, url)
+        
+        # 从 proxy 池中随机取一代理
+        err = 0
+        # 当池中 proxy 为空，等2秒
+        while len(self.proxy_pool_list) < 1:
+            err += 1
+            time.sleep(2)
+            # 超过10次，抛出错误
+            if err > 10:
+                raise Exception("proxy error!!!")
+            
+        self.thread_lock.acquire()
+        proxy_ip = random.choice(self.proxy_pool_list)
+        # 避免重复
+        self.proxy_pool_list.remove(proxy_ip)
+        self.thread_lock.release()
+        
         try:
             # html = self.get_local_html('test.html')
-            html = self.get_html(url)
-            print("Threading %d crawl %s" % thread_id, url)
+            html = self.get_html(url, proxy_ip)
+            # print("Threading %d crawl %s" % thread_id, url)
         except:
-            print("Threading %d crawl %s FAIL!!!" % thread_id, url)
+            print("Threading %d crawl %s FAIL!!!" % threading.currentThread().ident, url)
         else:
-            estate_list = self.get_list(html, "//html/body/div[5]/div[1]/ul/li")
-            for each in estate_list:
+            selector = etree.HTML(html)
+            # 信息提取 ， /html/body/div[5]/div[1]/ul/li
+            for each in selector.xpath("//html/body/div[5]/div[1]/ul/li"):
                 # 获取房产详细页面,/html/body/div[5]/div[1]/ul/li[1]/div/div[1]/a
                 estate_detail_url = each.xpath("./div/div[1]/a/@href")[0]
                 # 获取ID,/html/body/div[1]/div[2]/table/tbody/tr[92]/td[3]
                 estate_id = (estate_detail_url.strip().split('/')[-1]).split('.')[0]
                 # 获取名称
                 estate_name = each.xpath("./div/div[1]/a/text()")[0]
+                
                 estate = 'id:"{}", name:"{}" , url:"{}"'.format(estate_id, estate_name, estate_detail_url)
-                list_queue.put(estate)
-        # self.write_list_txtfile(estate_index, "estates_list.txt")
+                # self.write_one_dict_into_mysql(self.dealed_esate_candidate_table, estate)
+                estate_list.append((estate_id, estate_name, estate_detail_url))
+        
+        self.write_list_into_mysql(self.dealed_esate_candidate_table, fields, estate_list)
+        
+        # 该线程使用完proxy, 归还池
+        self.thread_lock.acquire()
+        self.proxy_pool_list.append(proxy_ip)
+        self.thread_lock.release()
+        # 冷却2秒
+        time.sleep(2)
 
-    # 取得房产具体信息
-    def get_estate_info(self, html):
-
-        selector = etree.HTML(html)
-        # 获取列表
-        # 大区 小区房型 面积 楼层 建造时间 发布时间 地铁站#列表
-        for info in selector.xpath("//li[@class='clear']"):
-
-            name = info.xpath("./div[@class='info clear']/div[@class='address']/div[@class='houseInfo']")
-            if name:
-                name = \
-                info.xpath("./div[@class='info clear']/div[@class='address']/div[@class='houseInfo']/text()")[0]
-                name = name.split('| ')
-                for x in name:
-                    if x == ' ':
-                        name.remove(x)
-                house_type = name[0]  # 房型
-                house_size = name[1]  # 面积
-            else:
-                house_type = '暂无数据'
-                house_size = '暂无数据'
-            year_type = info.xpath("./div[@class='info clear']/div[@class='flood']/div[@class='positionInfo']")
-            if year_type:
-                year_type = \
-                    info.xpath("./div[@class='info clear']/div[@class='flood']/div[@class='positionInfo']/text()")[
-                        0]
-                year_type = year_type.split(')')
-                house_num = year_type[0] + ')'  # 楼层
-                house_year = year_type[1].split(' ')[0]  # 楼型
-            else:
-                house_num = '暂无数据'
-                house_year = '暂无数据'
-            times = info.xpath("./div[@class='info clear']/div[@class='followInfo']")
-            if times:
-                times = info.xpath("./div[@class='info clear']/div[@class='followInfo']/text()")[0]
-                house_times = times.split('/ ')[-1].split('以前')[0]  # 发布时间
-            else:
-                house_times = '暂无数据'
-            subway = info.xpath("./div[@class='info clear']/div[@class='tag']/span[@class='subway']/text()")  # 地铁信息
-            if subway != []:
-                subway = subway[0]
-            else:
-                subway = '暂无数据'
-            price = info.xpath("./div[@class='info clear']/div[@class='priceInfo']/div[@class='totalPrice']/span")
-            if price:
-                price = \
-                    info.xpath(
-                        "./div[@class='info clear']/div[@class='priceInfo']/div[@class='totalPrice']/span/text()")[
-                        0]
-            else:
-                price = '暂无数据'  # 房价实际数
-            pricedanwei = info.xpath("./div[@class='info clear']/div[@class='priceInfo']/div[@class='totalPrice']")
-            if pricedanwei:
-                pricedanwei = \
-                    info.xpath(
-                        "./div[@class='info clear']/div[@class='priceInfo']/div[@class='totalPrice']/text()")[0]
-            houseprice = price + pricedanwei  # 总房价
-            Unit_Price = info.xpath(
-                "./div[@class='info clear']/div[@class='priceInfo']/div[@class='unitPrice']/span/text()")
-            if Unit_Price != []:
-                Unit_Price = Unit_Price[0].split('单价')[-1]
-            yield {
-                '地区': area,
-                '街道': url,
-                '房型': house_type,
-                '面积': house_size,
-                '楼层': house_num,
-                '建造时间': house_year,
-                '发布时间': house_times,
-                '房价': houseprice,
-                '单价': Unit_Price,
-                '地铁': subway
-            }
-
-
-    def write_info(item):
-        with open('lianjiaershou.csv', 'ab') as f:
-            item = dict(item)
-            f.write(item['地区'].encode('gbk'))
-            f.write(b',')
-            f.write(item['街道'].encode('gbk'))
-            f.write(b',')
-            f.write(item['房型'].encode('gbk'))
-            f.write(b',')
-            f.write(item['面积'].encode('gbk'))
-            f.write(b',')
-            f.write(item['楼层'].encode('gbk'))
-            f.write(b',')
-            f.write(item['建造时间'].encode('gbk'))
-            f.write(b',')
-            f.write(item['发布时间'].encode('gbk'))
-            f.write(b',')
-            f.write(item['房价'].encode('gbk'))
-            f.write(b',')
-            f.write(item['地区'].encode('gbk'))
-            f.write(b',')
-            f.write(item['单价'].encode('gbk'))
-            f.write(b',')
-            f.write(item['地铁'].encode('gbk'))
-            f.write(b'\r\n')
-
-    def get_estate_detail(self, url, detail_queue, thread_id):
-        print("Threading %d crawl %s" % thread_id, url)
-        try:
-            # html = self.get_local_html('test.html')
-            html = self.get_html(url)
-            print("Threading %d crawl %s" % thread_id, url)
-        except Exception as e:
-            print("Threading %d crawl %s FAIL!!!" % thread_id, url)
-        else:
-            estate_detail = self.get_list(html, "//html/body/div[5]/div[1]/ul/li")
-        finally:
-            pass;
-
-        estate = 'id:"{}", name:"{}" , url:"{}"'.format(estate_id, estate_name, estate_detail_url)
-        list_queue.put(estate)
-
-    # 处理抓取的IP，按线程数量进行切片，分别获得每片的起始位置，然后用不同的线程读取不同的数据块
-    def slice_list_and_multiple_threading_get_list(self,target_function, target_list):
-        _queue = queue.Queue()
-        crawl_thread = []
-
-        # 计算目标数量，如能被线程整除，则分块
-        target_count = len(target_list)
-        if target_count % self.crawl_threading_number == 0:
-            block_count = self.crawl_threading_number
-            block_target_count = target_count // self.crawl_threading_number
-        else:
-            block_count = self.crawl_threading_number + 1
-            block_target_count = target_count // (self.crawl_threading_number + 1)
-
-        for i in range(0, block_count):
-            print("block - " + str(i))
-            # verify_ip(ip_port_list[i * intBlockIPCount: (i + 1) * intBlockIPCount], valid_ip_queue)
-            thread = threading.Thread(target=target_function, args=(
-                target_list[i * block_target_count: (i + 1) * block_target_count-1], _queue, i))
-            crawl_thread.append(thread)
-
-        start_time = time.time()
-        print('Start : {}'.format(start_time))
-        for i in range(len(crawl_thread)):
-            crawl_thread[i].start()
-
-        # 等待所有线程结束
-        for i in range(len(crawl_thread)):
-            crawl_thread[i].join()
-
-        end_time = time.time()
-        print('End : {}'.format(end_time))
-        print("last time: {} s".format(time.time() - start_time))
-
-        # self.write_proxy_queue(detail_queue, self.file_proxy_valid_list)
-
-    # while not valid_ip_queue.empty():
-    # 	print(valid_ip_queue.get())
+    # 根据链家页面，生成 成交列表 的链接
+    def create_url_list(self):
+        self.index_url_list.append("https://sz.lianjia.com/chengjiao/")
+        for i in range(2, self.resource_page_number + 2):
+            self.index_url_list.append("https://sz.lianjia.com/chengjiao/pg" + str(i))
+    
+    # 取得 proxy 列表
+    def get_proxy_list(self):
+        sql = 'SELECT * FROM %s;' % self.proxy_valid_list_table
+        result = self.mysql.getMany(sql, 200)  # "all", 100
+        if len(result) < 1:
+            raise Exception("there is no proxy to use!!!")
+    
+        # 将MySQL的字典，转换为列表
+        for it in result:
+            self.proxy_list.append(it['ip'])
 
     def main(self):
-        pass
-
+        executor = ThreadPoolExecutor(max_workers=self.threading_pool_size)
+        executor.map(self.get_estates_list, self.index_url_list)
+        # executor.
+        # executor.shutdown()
+        executor.shutdown(wait=True)
 
 
 if __name__ == '__main__':
+    # 构建连接列表
     clawler = CrawlerLianjiaEsatesIndex()
     clawler.main()
