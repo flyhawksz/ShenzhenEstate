@@ -26,7 +26,16 @@ class Crawler(object):
     def __init__(self):  # 类的初始化函数，在类中的函数都有个self参数，其实可以理解为这个类的对象
         # 要为http报文分配header字段，否则很多页面无法获取
         self.http_headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:61.0) Gecko/20100101 Firefox/61.0',
+            # 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:61.0) Gecko/20100101 Firefox/61.0',
+            # 'Accept-Encoding': 'gzip, deflate'
+            
+            'content-type': 'charset=utf8',  # 解决response乱码
+            "Accept": "text/html,application/xhtml+xml,"
+                      "application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Connection": "Keep-Alive",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; WOW64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/55.0.2883.87 Safari/537.36",
             'Accept-Encoding': 'gzip, deflate'
         }
 
