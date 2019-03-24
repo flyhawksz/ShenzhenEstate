@@ -62,7 +62,10 @@ class Crawler(object):
 
     # 返回网页代码
     def get_html(self, url, proxy_ip=None):
-        response = requests.get(url, headers=self.http_headers, proxy=proxy_ip)
+        if proxy_ip:
+            response = requests.get(url, headers=self.http_headers, proxy=proxy_ip)
+        else:
+            response = requests.get(url, headers=self.http_headers)
         # print(response.text)
         return response.text
 
@@ -112,7 +115,7 @@ class Crawler(object):
     def write_list_into_mysql(self, table_name, fields, value_list):
         try:
             logging.info("insert into " + table_name + " (%s) values (%s);")
-            self.mysql.insertMany("insert into %s  (%s) values (%s);", table_name, fields, value_list)
+            self.mysql.insertMany("insert into " + table_name + "  (" + fields + ") values (%s);", value_list)
             self.mysql.end()
                 
         except Exception as e:

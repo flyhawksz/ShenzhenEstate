@@ -132,7 +132,7 @@ class CrawlerLianjiaEsatesIndex(Crawler):
         executor.map(self.get_estates_list, self.index_url_list)
         # executor.
         # executor.shutdown()
-        executor.shutdown(wait=True)
+        # executor.shutdown(wait=True)
 
 
 if __name__ == '__main__':

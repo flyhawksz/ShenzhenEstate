@@ -17,7 +17,7 @@ from Crawl import Crawler
 
 
 class ProxyCrawlerAndVerfiy(Crawler):
-    is_clear_all_data = False
+    is_clear_all_data = True
     connargs = {"host": "localhost", "port": "3306", "user": "root", "passwd": "123456", "db": "proxyip"}
     
     def __init__(self):  # 类的初始化函数，在类中的函数都有个self参数，其实可以理解为这个类的对象
@@ -29,7 +29,7 @@ class ProxyCrawlerAndVerfiy(Crawler):
         self.file_proxy_valid_list_table = self.database_name + ".proxy_valid"  # 保存 通过验证可用的 代理IP
         self.proxy_resource_Url = "http://www.xicidaili.com/nn/"  # 用于爬取代理信息的网站
         self.verify_url = "http://www.baidu.com/"  # 用于验证Proxy IP的网站
-        self.proxy_resource_page = 5  # 获取代理页面数量
+        self.proxy_resource_page = 10  # 获取代理页面数量
         self.verify_threading_number = 10  # 验证IP线程数量
         
         # 初始化数据库连接
@@ -124,12 +124,13 @@ class ProxyCrawlerAndVerfiy(Crawler):
     # 验证IP
     def verify_proxy(self):  # 从proxy_all.txt获取所有Proxy IP进行验证，将有效的IP存入proxy_valid.txt
         def verify_ip(ip_port_list, valid_ip_queue, _id):
-            index = 0
+
             requests.adapters.DEFAULT_RETRIES = 5
             test_proxy = requests.session()
             test_proxy.keep_alive = False
             
             for i in ip_port_list:
+                test_page = ''
                 if type(i) is bytes:
                     ip_port = i.decode()
                 else:
@@ -141,17 +142,28 @@ class ProxyCrawlerAndVerfiy(Crawler):
                 
                 try:
                     # 通过request.get获取验证页面，timeout用于防止 傻等，毕竟要验证一堆IP
-                    test_page = test_proxy.get(self.verify_url, headers=self.http_headers, proxies=proxy_url,
-                                               timeout=(2, 3))
+                    response = test_proxy.get(self.verify_url, headers=self.http_headers, proxies=proxy_url, timeout=(2,3))
+                    # charset的编码检测
+                    response.encoding = response.apparent_encoding
                 except:  # 如果获取页面异常，进入这儿，再处理下一个IP
                     print("Threading %d : Invaild Proxy : %s" % (_id, ip_port.strip('\n')))
                     # logging.info("Threading %d : Invaild Proxy : %s" % (_id, ip_port.strip('\n')))
                     continue
                 # 获取正常的页面返回码一般都是200，不是的话继续处理下一个IP
-                if test_page.status_code != 200:
+                if response.status_code != 200:
                     print("Threading %d : Invaild Proxy : %s" % (_id, ip_port.strip('\n')))
                     # logging.info("Threading %d : Invaild Proxy : %s" % (_id, ip_port.strip('\n')))
                     continue
+                
+                html = response.text
+                # 对获取的页面进行解析
+                selector = etree.HTML(html)
+                baidu_title = selector.xpath("/html/head/title/text()")[0]
+                if not baidu_title =="百度一下，你就知道":
+                    print("Threading %d : Invaild Proxy : %s, string is not matching" % (_id, ip_port.strip('\n')))
+                    # logging.info("Threading %d : Invaild Proxy : %s" % (_id, ip_port.strip('\n')))
+                    continue
+                
                 
                 # 能用的IP存入proxy_valid.txt
                 print("********Threading %d : Vaild Proxy : %s" % (_id, ip_port.strip('\n')))
@@ -229,7 +241,7 @@ class ProxyCrawlerAndVerfiy(Crawler):
         slice_ip_list()
     
     def main(self):
-        # self.get_proxies()
+        self.get_proxies()
         self.verify_proxy()
 
 
