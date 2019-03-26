@@ -64,6 +64,7 @@ class CrawlerLianjiaEsatesIndex(Crawler):
         html = ''
         estate_list = []
         proxy_ip = ""
+        push_aside_proxy = []  # 暂存无法访问，错误的proxy, 获取页面后返回池中备用
         fields = ('id', 'name', 'url')
         # print("Threading %d crawl %s" % threading.currentThread().ident, url)
         
@@ -104,12 +105,14 @@ class CrawlerLianjiaEsatesIndex(Crawler):
                 html = response.text
             except:
                 print("Threading %d crawl %s FAIL!!!" % threading.currentThread().ident, url)
+                push_aside_proxy.append(c_proxy_ip)
                 continue
                 
             # 获取正常的页面返回码一般都是200，不是的话继续处理下一个IP
             if response.status_code != 200:
                 print("Threading %d : Invaild Proxy : %s" % (threading.current_thread().ident, proxy_ip.strip('\n')))
                 # logging.info("Threading %d : Invaild Proxy : %s" % (_id, ip_port.strip('\n')))
+                push_aside_proxy.append(c_proxy_ip)
                 continue
 
             selector = etree.HTML(html)
@@ -126,11 +129,13 @@ class CrawlerLianjiaEsatesIndex(Crawler):
                 # self.write_one_dict_into_mysql(self.dealed_esate_candidate_table, estate)
                 estate_list.append((estate_id, estate_name, estate_detail_url))
         
+        # 应该是数据库名+表名
         self.write_list_into_mysql(self.dealed_esate_candidate_table, fields, estate_list)
         
         # 该线程使用完proxy, 归还池
         self.thread_lock.acquire()
         self.proxy_pool_list.append(proxy_ip)
+        self.proxy_pool_list.append(push_aside_proxy)
         self.thread_lock.release()
         # 冷却2秒
         time.sleep(2)
