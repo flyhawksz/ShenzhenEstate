@@ -21,9 +21,10 @@ from Mysql_connect_pool_tools import MyPymysqlPool
 
 
 class Crawler(object):
-    connargs = {"host": "localhost", "port": "3306", "user": "root", "passwd": "123456", "db": "test"}
+    # connargs = {"host": "localhost", "port": "3306", "user": "root", "passwd": "123456", "db": "test"}
     
     def __init__(self):  # 类的初始化函数，在类中的函数都有个self参数，其实可以理解为这个类的对象
+        self.connargs = {"host": "localhost", "port": "3306", "user": "root", "passwd": "123456"}
         # 要为http报文分配header字段，否则很多页面无法获取
         self.http_headers = {
             # 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:61.0) Gecko/20100101 Firefox/61.0',
@@ -61,13 +62,20 @@ class Crawler(object):
         return gain_list
 
     # 返回网页代码
-    def get_html(self, url, proxy_ip=None):
-        if proxy_ip:
-            response = requests.get(url, headers=self.http_headers, proxy=proxy_ip)
-        else:
-            response = requests.get(url, headers=self.http_headers)
+    def get_response(self, target_url, headers, proxy_url=None):
+        requests.adapters.DEFAULT_RETRIES = 5
+        _requests = requests.session()
+        _requests.keep_alive = False
+        # if proxy_ip:
+        # response = _requests.get(url, headers=headers, proxies=proxy_ip, timeout=(2,3))
+        response = _requests.get(target_url, headers=headers, proxies=proxy_url, timeout=(2,3))
+        # else:
+        #     response = _requests.get(url, headers=headers, timeout=(3,5))
         # print(response.text)
-        return response.text
+        
+        # charset的编码检测
+        response.encoding = response.apparent_encoding
+        return response
 
     # 返回本地文件
     def get_local_html(self, filepath):

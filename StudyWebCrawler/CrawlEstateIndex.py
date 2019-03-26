@@ -21,13 +21,6 @@ class CrawlerLianjiaEsatesIndex(Crawler):
     def __init__(self):  # 类的初始化函数，在类中的函数都有个self参数，其实可以理解为这个类的对象
 
         Crawler.__init__(self)
-        
-        # 初始化数据库连接
-        try:
-            if self.mysql is None:
-                self.create_mysql(self.connargs)
-        except Exception as e:
-            print(e)
             
         self.thread_lock = threading.Lock()
         self.database_name = 'szestate'
@@ -35,6 +28,15 @@ class CrawlerLianjiaEsatesIndex(Crawler):
         self.proxy_valid_list_table = self.database_name + ".proxy_valid"  # 保存 通过验证可用的 代理IP
         
         self.dealed_esate_candidate_table = self.database_name + ".dealed_esate_candidate"  # 保存 通过验证可用的 代理IP
+
+        self.connargs['db'] = self.database_name
+
+        # 初始化数据库连接
+        try:
+            if self.mysql is None:
+                self.create_mysql(self.connargs)
+        except Exception as e:
+            print(e)
         
         self.file_all_list = "estates_all.txt"  # 保存 免费代理服务器网站 爬下来的所有代理IP
         self.proxy_resource_Url = ""  # 用于爬取代理信息的网站
@@ -59,6 +61,7 @@ class CrawlerLianjiaEsatesIndex(Crawler):
     # 获取房产ID
     # 解析网页，并得到网页中的ID,保存为文件
     def get_estates_list(self, url):
+        html = ''
         estate_list = []
         proxy_ip = ""
         fields = ('id', 'name', 'url')
@@ -73,20 +76,42 @@ class CrawlerLianjiaEsatesIndex(Crawler):
             # 超过10次，抛出错误
             if err > 10:
                 raise Exception("proxy error!!!")
+
+        # 如果没能下载到网页，换个proxy再试，直到池为空
+        while len(html) < 1:
+            self.thread_lock.acquire()
+            if len(self.proxy_pool_list) > 0:
+                c_proxy_ip = random.choice(self.proxy_pool_list)
+                # 避免重复
+                self.proxy_pool_list.remove(c_proxy_ip)
+            else:
+                raise Exception("proxy pool is empty!!")
+            self.thread_lock.release()
+
+            if type(c_proxy_ip) is bytes:
+                proxy_ip = c_proxy_ip.decode()
+            else:
+                proxy_ip = c_proxy_ip
+                
+            proxy_url = {'http': 'http://' + proxy_ip.strip('\n')}
             
-        self.thread_lock.acquire()
-        proxy_ip = random.choice(self.proxy_pool_list)
-        # 避免重复
-        self.proxy_pool_list.remove(proxy_ip)
-        self.thread_lock.release()
-        
-        try:
-            # html = self.get_local_html('test.html')
-            html = self.get_html(url, proxy_ip)
-            # print("Threading %d crawl %s" % thread_id, url)
-        except:
-            print("Threading %d crawl %s FAIL!!!" % threading.currentThread().ident, url)
-        else:
+            try:
+                # html = self.get_local_html('test.html')
+                response = self.get_response(url, self.http_headers, proxy_url)
+                # print("Threading %d crawl %s" % thread_id, url)
+                # charset的编码检测
+                response.encoding = response.apparent_encoding
+                html = response.text
+            except:
+                print("Threading %d crawl %s FAIL!!!" % threading.currentThread().ident, url)
+                continue
+                
+            # 获取正常的页面返回码一般都是200，不是的话继续处理下一个IP
+            if response.status_code != 200:
+                print("Threading %d : Invaild Proxy : %s" % (threading.current_thread().ident, proxy_ip.strip('\n')))
+                # logging.info("Threading %d : Invaild Proxy : %s" % (_id, ip_port.strip('\n')))
+                continue
+
             selector = etree.HTML(html)
             # 信息提取 ， /html/body/div[5]/div[1]/ul/li
             for each in selector.xpath("//html/body/div[5]/div[1]/ul/li"):

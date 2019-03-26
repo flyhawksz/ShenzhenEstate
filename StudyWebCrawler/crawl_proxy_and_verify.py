@@ -18,20 +18,21 @@ from Crawl import Crawler
 
 class ProxyCrawlerAndVerfiy(Crawler):
     is_clear_all_data = True
-    connargs = {"host": "localhost", "port": "3306", "user": "root", "passwd": "123456", "db": "proxyip"}
+    # connargs = {"host": "localhost", "port": "3306", "user": "root", "passwd": "123456", "db": "proxyip"}
     
     def __init__(self):  # 类的初始化函数，在类中的函数都有个self参数，其实可以理解为这个类的对象
         Crawler.__init__(self)
         self.database_name = 'szestate'
         self.file_proxy_all_list = "proxy_candidate.txt"  # 保存 免费代理服务器网站 爬下来的所有代理IP
         self.file_proxy_valid_list = "proxy_valid.txt"  # 保存 通过验证可用的 代理IP
-        self.file_proxy_all_list_table = self.database_name + ".proxy_candidate"  # 保存 免费代理服务器网站 爬下来的所有代理IP
-        self.file_proxy_valid_list_table = self.database_name + ".proxy_valid"  # 保存 通过验证可用的 代理IP
+        self.file_proxy_all_list_table = "proxy_candidate"  # 保存 免费代理服务器网站 爬下来的所有代理IP
+        self.file_proxy_valid_list_table = "proxy_valid"  # 保存 通过验证可用的 代理IP
         self.proxy_resource_Url = "http://www.xicidaili.com/nn/"  # 用于爬取代理信息的网站
         self.verify_url = "http://www.baidu.com/"  # 用于验证Proxy IP的网站
         self.proxy_resource_page = 10  # 获取代理页面数量
         self.verify_threading_number = 10  # 验证IP线程数量
-        
+
+        self.connargs['db'] = self.database_name
         # 初始化数据库连接
         try:
             if self.mysql is None:
@@ -69,16 +70,15 @@ class ProxyCrawlerAndVerfiy(Crawler):
                     # self.mysql.delete("drop table if exists " + self.file_proxy_all_list_table)
                     # self.mysql.insert("create table if not exists " + self.file_proxy_all_list_table + "(id int not null AUTO_INCREMENT PRIMARY KEY ,ip char(30))")  # 自增长
                     # 清空表
-                    self.mysql.delete("truncate table " + self.file_proxy_all_list_table)
+                    self.mysql.delete("truncate table {db}.{table}".format(db=self.database_name, table=self.file_proxy_all_list_table))
                 else:
-                    self.mysql.insert("create table if not exists " + self.file_proxy_all_list_table + "(id int not null AUTO_INCREMENT PRIMARY KEY ,ip char(30))")  # 自增长
+                    self.mysql.insert("create table if not exists {db}.{table} (id int not null AUTO_INCREMENT PRIMARY KEY ,ip char(30))".format(db=self.database_name, table=self.file_proxy_all_list_table))  # 自增长
 
                 if self.mysql.hasThisTable(self.file_proxy_valid_list_table):
                     # 清空表
-                    self.mysql.delete("truncate table " + self.file_proxy_valid_list_table)
+                    self.mysql.delete("truncate table {db}.{table}".format(db=self.database_name, table=self.file_proxy_valid_list_table))
                 else:
-                    self.mysql.insert(
-                        "create table if not exists " + self.file_proxy_valid_list_table + "(id int not null AUTO_INCREMENT PRIMARY KEY ,ip char(30))")  # 自增长
+                    self.mysql.insert("create table if not exists {db}.{table} (id int not null AUTO_INCREMENT PRIMARY KEY ,ip char(30))".format(db=self.database_name, table=self.file_proxy_valid_list_table))  # 自增长
 
             except Exception as e:
                 print("TRUNCATE fail")
@@ -89,7 +89,8 @@ class ProxyCrawlerAndVerfiy(Crawler):
         for i in range(1, self.proxy_resource_page + 1):
             url = self.proxy_resource_Url + str(i)
             logging.info('Crawl %s' % url)
-            html = self.get_html(url)
+            response = self.get_response(url, self.http_headers)
+            html = response.text
             logging.info('parse proxy')
             self.get_proxy_in_html(html)
             
@@ -125,9 +126,9 @@ class ProxyCrawlerAndVerfiy(Crawler):
     def verify_proxy(self):  # 从proxy_all.txt获取所有Proxy IP进行验证，将有效的IP存入proxy_valid.txt
         def verify_ip(ip_port_list, valid_ip_queue, _id):
 
-            requests.adapters.DEFAULT_RETRIES = 5
-            test_proxy = requests.session()
-            test_proxy.keep_alive = False
+            # requests.adapters.DEFAULT_RETRIES = 5
+            # test_proxy = requests.session()
+            # test_proxy.keep_alive = False
             
             for i in ip_port_list:
                 test_page = ''
@@ -142,9 +143,10 @@ class ProxyCrawlerAndVerfiy(Crawler):
                 
                 try:
                     # 通过request.get获取验证页面，timeout用于防止 傻等，毕竟要验证一堆IP
-                    response = test_proxy.get(self.verify_url, headers=self.http_headers, proxies=proxy_url, timeout=(2,3))
-                    # charset的编码检测
-                    response.encoding = response.apparent_encoding
+                    # response = test_proxy.get(self.verify_url, headers=self.http_headers, proxies=proxy_url, timeout=(2,3))
+                    response = self.get_response(self.verify_url, self.http_headers, proxy_url)
+                    # # charset的编码检测
+                    # response.encoding = response.apparent_encoding
                 except:  # 如果获取页面异常，进入这儿，再处理下一个IP
                     print("Threading %d : Invaild Proxy : %s" % (_id, ip_port.strip('\n')))
                     # logging.info("Threading %d : Invaild Proxy : %s" % (_id, ip_port.strip('\n')))
