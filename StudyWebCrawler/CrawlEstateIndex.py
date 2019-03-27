@@ -160,7 +160,7 @@ class CrawlerLianjiaEsatesIndex(Crawler):
     def main(self):
         executor = ThreadPoolExecutor(max_workers=self.threading_pool_size)
         executor.map(self.get_estates_list, self.index_url_list)
-        # executor.
+
         # executor.shutdown()
         # executor.shutdown(wait=True)
 

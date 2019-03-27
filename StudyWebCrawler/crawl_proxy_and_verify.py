@@ -14,6 +14,8 @@ import queue  # 多线程传递验证通过的IP, 保证线程安全
 import os
 import time
 from Crawl import Crawler
+import random
+from concurrent.futures import ThreadPoolExecutor
 
 
 class ProxyCrawlerAndVerfiy(Crawler):
@@ -28,9 +30,18 @@ class ProxyCrawlerAndVerfiy(Crawler):
         self.file_proxy_all_list_table = "proxy_candidate"  # 保存 免费代理服务器网站 爬下来的所有代理IP
         self.file_proxy_valid_list_table = "proxy_valid"  # 保存 通过验证可用的 代理IP
         self.proxy_resource_Url = "http://www.xicidaili.com/nn/"  # 用于爬取代理信息的网站
+        
         self.verify_url = "http://www.baidu.com/"  # 用于验证Proxy IP的网站
-        self.proxy_resource_page = 10  # 获取代理页面数量
+        self.proxy_pool_list =[]
+        self.proxy_list = []
+        self.proxy_resource_page = 5  # 获取代理页面数量
         self.verify_threading_number = 10  # 验证IP线程数量
+        self.threading_pool_size = 5
+        
+        # 初始化代理池，使用上次验证的代理
+        with open((self.file_proxy_all_list + '.bak'), 'r') as fd_proxy_all:
+            self.ip_port_list = fd_proxy_all.readlines()  # 读取全部内容
+        self.proxy_pool_list = self.proxy_list
 
         self.connargs['db'] = self.database_name
         # 初始化数据库连接
@@ -83,16 +94,75 @@ class ProxyCrawlerAndVerfiy(Crawler):
             except Exception as e:
                 print("TRUNCATE fail")
                 # self.mysql.dispose()
-    
-    def get_proxies(self):
-        # 获取IP
+
+    def get_proxies_main(self):
+        url_list = []
         for i in range(1, self.proxy_resource_page + 1):
-            url = self.proxy_resource_Url + str(i)
-            logging.info('Crawl %s' % url)
-            response = self.get_response(url, self.http_headers)
-            html = response.text
+            url_list.append(self.proxy_resource_Url + str(i))
+        executor = ThreadPoolExecutor(max_workers=self.threading_pool_size)
+        executor.map(self.get_proxies, url_list)
+    
+    def get_proxies(self, url):
+        html = ''
+        push_aside_proxy = []
+        # 从 proxy 池中随机取一代理
+        err = 0
+        # 当池中 proxy 为空，等2秒
+        while len(self.proxy_pool_list) < 1:
+            err += 1
+            time.sleep(2)
+            # 超过10次，抛出错误
+            if err > 10:
+                raise Exception("proxy error!!!")
+
+        # 如果没能下载到网页，换个proxy再试，直到池为空
+        while len(html) < 1:
+            self.thread_lock.acquire()
+            if len(self.proxy_pool_list) > 0:
+                c_proxy_ip = random.choice(self.proxy_pool_list)
+                # 避免重复
+                self.proxy_pool_list.remove(c_proxy_ip)
+            else:
+                raise Exception("proxy pool is empty!!")
+            self.thread_lock.release()
+    
+            if type(c_proxy_ip) is bytes:
+                proxy_ip = c_proxy_ip.decode()
+            else:
+                proxy_ip = c_proxy_ip
+    
+            proxy_url = {'http': 'http://' + proxy_ip.strip('\n')}
+
+        # 获取IP
+            try:
+                logging.info('Crawl %s' % url)
+                # html = self.get_local_html('test.html')
+                response = self.get_response(url, self.http_headers, proxy_url)
+                # print("Threading %d crawl %s" % thread_id, url)
+                # charset的编码检测
+                response.encoding = response.apparent_encoding
+                html = response.text
+            except:
+                print("Threading %d crawl %s FAIL!!!" % threading.currentThread().ident, url)
+                push_aside_proxy.append(c_proxy_ip)
+                continue
+
+            # 获取正常的页面返回码一般都是200，不是的话继续处理下一个IP
+            if response.status_code != 200:
+                print("Threading %d : Invaild Proxy : %s" % (threading.current_thread().ident, proxy_ip.strip('\n')))
+                # logging.info("Threading %d : Invaild Proxy : %s" % (_id, ip_port.strip('\n')))
+                push_aside_proxy.append(c_proxy_ip)
+                continue
+                
+
             logging.info('parse proxy')
             self.get_proxy_in_html(html)
+
+            # 该线程使用完proxy, 归还池
+            self.thread_lock.acquire()
+            self.proxy_pool_list.append(proxy_ip)
+            self.proxy_pool_list.append(push_aside_proxy)
+            self.thread_lock.release()
             
     # 获取ip
     # 解析网页，并得到网页中的代理IP,保存为文件
@@ -243,7 +313,7 @@ class ProxyCrawlerAndVerfiy(Crawler):
         slice_ip_list()
     
     def main(self):
-        self.get_proxies()
+        self.get_proxies_main()
         self.verify_proxy()
 
 
